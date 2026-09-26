@@ -85,8 +85,11 @@ Open another connection with a different username to start chatting.
 To run the command-line client:
 
 ```bash
-sbt client/run
+sbt 'client/run alice'
 ```
+
+Type a message and press Enter to send it. Enter `/quit` (or send EOF with
+Ctrl-D) to disconnect.
 
 ## **Architecture**
 
@@ -132,7 +135,7 @@ sbt server/run
 Run the command-line client:
 
 ```bash
-sbt client/run
+sbt 'client/run alice'
 ```
 
 Run tests:
