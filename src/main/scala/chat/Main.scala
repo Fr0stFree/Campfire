@@ -10,55 +10,18 @@ import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import chat.model.{ChatEvent, User}
+import chat.http.{WebSocketChat, Router}
 import io.circe.syntax.*
-import chat.service.{ChatService, ChatServiceImpl}
+import chat.service.ChatService
 import cats.effect.Ref
 
-class Router(wsb: WebSocketBuilder2[IO], chat: ChatService) {
-  val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case GET -> Root / "health"        => handleGetHealth()
-    case GET -> Root / "ws" / username => handleWS(User(username))
-    case GET -> Root / "users"         => handleGetUsers
-  }
-
-  private def handleGetHealth() = Ok("ok")
-
-  private def handleWS(user: User): IO[Response[IO]] = {
-    val send: Stream[IO, WebSocketFrame] =
-      Stream
-        .eval(chat.join(user))
-        .drain ++
-        chat.subscribe
-          .map(event => WebSocketFrame.Text(event.asJson.noSpaces))
-          .onFinalize(chat.leave(user))
-
-    val receive: Pipe[IO, WebSocketFrame, Unit] =
-      _.evalMap {
-        case WebSocketFrame.Text(msg, _) =>
-          IO.println(s"Received message from ${user.name}: $msg") *> chat
-            .send(user, msg)
-            .void
-
-        case _ => IO.unit
-      }
-    wsb.build(send, receive)
-  }
-
-  private def handleGetUsers = {
-    chat
-      .users()
-      .flatMap {
-        users => Ok(users.map(_.name).mkString(", "))
-      }
-  }
-}
-
 object Main extends IOApp.Simple {
-
   private def httpApp(chat: ChatService)(
       wsb: WebSocketBuilder2[IO]
-  ): HttpApp[IO] =
-    new Router(wsb, chat).routes.orNotFound
+  ): HttpApp[IO] = {
+    val ws = new WebSocketChat(wsb, chat)
+    new Router(chat, ws).routes.orNotFound
+  }
 
   private def runServer(chat: ChatService): IO[Unit] =
     EmberServerBuilder
@@ -71,9 +34,7 @@ object Main extends IOApp.Simple {
 
   override def run: IO[Unit] =
     for {
-      topic <- Topic[IO, ChatEvent]
-      userStorage <- Ref.of[IO, Set[User]](Set.empty)
-      chat = ChatServiceImpl(topic, userStorage)
+      chat <- ChatService.build
       _ <- runServer(chat)
     } yield ()
 }
