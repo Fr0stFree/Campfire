@@ -12,14 +12,18 @@ import org.http4s.websocket.WebSocketFrame
 import chat.model.{ChatEvent, User}
 import io.circe.syntax.*
 import chat.service.{ChatService, ChatServiceImpl}
+import cats.effect.Ref
 
 class Router(wsb: WebSocketBuilder2[IO], chat: ChatService) {
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case GET -> Root / "health"        => Ok("ok")
-    case GET -> Root / "ws" / username => websocket(User(username))
+    case GET -> Root / "health"        => handleGetHealth()
+    case GET -> Root / "ws" / username => handleWS(User(username))
+    case GET -> Root / "users"         => handleGetUsers
   }
 
-  private def websocket(user: User): IO[Response[IO]] =
+  private def handleGetHealth() = Ok("ok")
+
+  private def handleWS(user: User): IO[Response[IO]] = {
     val send: Stream[IO, WebSocketFrame] =
       Stream
         .eval(chat.join(user))
@@ -38,6 +42,15 @@ class Router(wsb: WebSocketBuilder2[IO], chat: ChatService) {
         case _ => IO.unit
       }
     wsb.build(send, receive)
+  }
+
+  private def handleGetUsers = {
+    chat
+      .users()
+      .flatMap {
+        users => Ok(users.map(_.name).mkString(", "))
+      }
+  }
 }
 
 object Main extends IOApp.Simple {
@@ -59,7 +72,8 @@ object Main extends IOApp.Simple {
   override def run: IO[Unit] =
     for {
       topic <- Topic[IO, ChatEvent]
-      chat = ChatServiceImpl(topic)
+      userStorage <- Ref.of[IO, Set[User]](Set.empty)
+      chat = ChatServiceImpl(topic, userStorage)
       _ <- runServer(chat)
     } yield ()
 }
