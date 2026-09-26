@@ -2,18 +2,11 @@ package chat
 
 import cats.effect.{IO, IOApp}
 import com.comcast.ip4s.*
-import fs2.{Pipe, Stream}
-import fs2.concurrent.Topic
-import org.http4s.{HttpApp, HttpRoutes, Response}
-import org.http4s.dsl.io.*
+import org.http4s.HttpApp
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.websocket.WebSocketFrame
-import chat.model.{ChatEvent, User}
 import chat.http.{WebSocketChat, Router}
-import io.circe.syntax.*
 import chat.service.ChatService
-import cats.effect.Ref
 
 object Main extends IOApp.Simple {
   private def httpApp(chat: ChatService)(
