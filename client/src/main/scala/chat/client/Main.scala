@@ -12,10 +12,10 @@ import fs2.Stream
 import chat.model.{ChatEvent, User}
 
 object ConsoleInput {
-  val commands: Stream[IO, ClientCommand] =
+  val commands: Stream[IO, ConsoleCommand] =
     stdinUtf8[IO](4096)
       .through(text.lines)
-      .map(ClientCommand.fromString)
+      .map(ConsoleCommand.fromString)
       .unNone
 
 }
@@ -43,7 +43,7 @@ object Main extends IOApp {
     JdkWSClient.simple[IO].use { wsClient =>
       val uri = serverUri / "ws" / username
       wsClient
-        .connectHighLevel(WSRequest(uri))
+        .connect(WSRequest(uri))
         .use { connection =>
           val processor = ConsoleEventProcessor(username)
           ChatClient(connection, processor.process)

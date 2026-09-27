@@ -2,10 +2,11 @@ package chat.model
 
 import io.circe.{Decoder, Encoder, Json}
 
-enum ChatEvent:
+enum ChatEvent {
   case UserJoined(user: User)
   case UserLeft(user: User)
-  case Message(user: User, text: String)
+  case Broadcast(sender: User, text: String)
+}
 
 object ChatEvent:
   given Encoder[ChatEvent] = Encoder.instance {
@@ -19,25 +20,25 @@ object ChatEvent:
         "type" -> Json.fromString("left"),
         "username" -> Json.fromString(user.name)
       )
-    case ChatEvent.Message(user, text) =>
+    case ChatEvent.Broadcast(user, text) =>
       Json.obj(
-        "type" -> Json.fromString("message"),
+        "type" -> Json.fromString("broadcast"),
         "username" -> Json.fromString(user.name),
         "message" -> Json.fromString(text)
       )
   }
 
   given Decoder[ChatEvent] = Decoder.instance { cursor =>
-    for
+    for {
       eventType <- cursor.get[String]("type")
       username <- cursor.get[String]("username")
       event <- eventType match
-        case "joined" => Right(ChatEvent.UserJoined(User(username)))
-        case "left"   => Right(ChatEvent.UserLeft(User(username)))
-        case "message" =>
+        case "joined"  => Right(ChatEvent.UserJoined(User(username)))
+        case "left"    => Right(ChatEvent.UserLeft(User(username)))
+        case "broadcast" =>
           cursor
             .get[String]("message")
-            .map(text => ChatEvent.Message(User(username), text))
+            .map(text => ChatEvent.Broadcast(User(username), text))
         case unknown =>
           Left(
             io.circe.DecodingFailure(
@@ -45,5 +46,5 @@ object ChatEvent:
               cursor.history
             )
           )
-    yield event
+    } yield event
   }

@@ -23,7 +23,7 @@ final class ConsoleRenderer(username: String) {
     event match {
       case ChatEvent.UserJoined(user) => Some(s"* ${user.name} joined")
       case ChatEvent.UserLeft(user)   => Some(s"* ${user.name} left")
-      case ChatEvent.Message(user, _) if username == user.name => None
-      case ChatEvent.Message(user, text) => Some(s"${user.name}: $text")
+      case ChatEvent.Broadcast(user, _) if username == user.name => None
+      case ChatEvent.Broadcast(user, text) => Some(s"${user.name}: $text")
     }
 }

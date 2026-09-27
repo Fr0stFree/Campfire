@@ -1,36 +1,49 @@
 package chat.client
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.{Deferred, IO}
 import cats.syntax.all.*
-import fs2.io.stdinUtf8
-import fs2.text
-import io.circe.parser.decode
-import org.http4s.Uri
-import org.http4s.client.websocket.{WSConnectionHighLevel, WSFrame, WSRequest}
-import org.http4s.jdkhttpclient.JdkWSClient
 import fs2.Stream
-import chat.model.{ChatEvent, User}
+import io.circe.parser.decode
+import io.circe.syntax.*
+import org.http4s.client.websocket.{WSConnection, WSFrame}
+
+import scala.concurrent.duration.*
+
+import chat.model.ChatEvent
 
 final class ChatClient(
-    connection: WSConnectionHighLevel[IO],
+    connection: WSConnection[IO],
     onEvent: ChatEvent => IO[Unit]
 ) {
 
-  def run(commands: Stream[IO, ClientCommand]): IO[Unit] = {
-    IO.race(sendMessages(commands), receiveEvents).void
-  }
-  private def sendMessages(commands: Stream[IO, ClientCommand]): IO[Unit] =
-    commands
-      .takeWhile(_ != ClientCommand.Quit)
-      .collect { case ClientCommand.SendMessage(text) => text }
-      .evalMap(text => connection.send(WSFrame.Text(text)))
-      .compile
-      .drain
+  def run(commands: Stream[IO, ConsoleCommand]): IO[Unit] =
+    Deferred[IO, Unit].flatMap { closeReceived =>
+      IO.race(
+        sendMessages(commands, closeReceived),
+        receiveEvents(closeReceived)
+      ).void
+    }
 
-  private def receiveEvents: IO[Unit] =
+  private def sendMessages(
+      commands: Stream[IO, ConsoleCommand],
+      closeReceived: Deferred[IO, Unit]
+  ): IO[Unit] =
+    commands
+      .takeWhile(_ != ConsoleCommand.Quit)
+      .collect { case ConsoleCommand.Send(command) => command }
+      .evalMap(command => connection.send(WSFrame.Text(command.asJson.noSpaces)))
+      .compile
+      .drain *>
+      connection.send(WSFrame.Close(1000, "Client quit")) *>
+      closeReceived.get.timeoutTo(2.seconds, IO.unit)
+
+  private def receiveEvents(closeReceived: Deferred[IO, Unit]): IO[Unit] =
     connection.receiveStream
-      .collect { case WSFrame.Text(payload, _) => payload }
-      .evalMap(handlePayload)
+      .evalMap {
+        case WSFrame.Text(payload, _) => handlePayload(payload)
+        case _: WSFrame.Close         => closeReceived.complete(()).void
+        case _                        => IO.unit
+      }
       .compile
       .drain
 

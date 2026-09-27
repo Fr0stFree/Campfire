@@ -21,7 +21,8 @@ lazy val shared = (project in file("shared"))
     name := "campfire-shared",
     libraryDependencies ++= Seq(
       "io.circe" %% "circe-core" % circeVersion,
-      "io.circe" %% "circe-generic" % circeVersion
+      "io.circe" %% "circe-generic" % circeVersion,
+      "io.circe" %% "circe-parser" % circeVersion,
     )
   )
 
@@ -48,6 +49,5 @@ lazy val client = (project in file("client"))
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.http4s" %% "http4s-jdk-http-client" % http4sJdkClientVersion,
-      "io.circe" %% "circe-parser" % circeVersion
     )
   )

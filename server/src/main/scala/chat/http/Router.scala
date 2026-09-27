@@ -14,10 +14,5 @@ final class Router(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "health"        => Ok("ok")
     case GET -> Root / "ws" / username => ws.connect(User(username))
-    case GET -> Root / "users"         => {
-      chat
-        .getUsers()
-        .flatMap(users => Ok(users.map(_.name).mkString(", ")))
-    }
   }
 }

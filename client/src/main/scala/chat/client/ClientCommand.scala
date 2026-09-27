@@ -1,15 +1,21 @@
 package chat.client
 
-enum ClientCommand {
-  case SendMessage(message: String)
+import chat.model.ClientCommand
+
+enum ConsoleCommand {
+  case Send(command: ClientCommand)
   case Quit
 }
 
-object ClientCommand {
-  def fromString(input: String): Option[ClientCommand] =
+object ConsoleCommand {
+  def fromString(input: String): Option[ConsoleCommand] =
     input.trim match {
-      case ""      => None
-      case "/quit" => Some(Quit)
-      case message => Some(SendMessage(message))
+      case ""       => None
+      case "/quit"  => Some(ConsoleCommand.Quit)
+      case "/users" => Some(ConsoleCommand.Send(ClientCommand.ListUsers))
+      case message if message.startsWith("/") => None // Unknown command
+      case message                            =>
+        Some(ConsoleCommand.Send(ClientCommand.SendMessage(message)))
     }
 }
+

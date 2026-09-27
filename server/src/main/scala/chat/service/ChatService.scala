@@ -1,17 +1,16 @@
 package chat.service
 import cats.effect.IO
-import chat.model.{ChatEvent, User, UserConnectResult}
+import chat.model.{ChatEvent, User, UserConnectResult, ClientCommand}
 import fs2.Stream
 import fs2.concurrent.Topic
 import cats.effect.Ref
 import org.typelevel.log4cats.Logger
 
 trait ChatService {
-  def send(user: User, message: String): IO[Unit]
+  def handle(user: User, command: ClientCommand): IO[Unit]
   def subscribe: Stream[IO, ChatEvent]
   def join(user: User): IO[UserConnectResult]
   def leave(user: User): IO[Unit]
-  def getUsers(): IO[Set[User]]
 }
 
 object ChatService {
@@ -30,15 +29,9 @@ final class ChatServiceImpl(
 
   private val queueSize: Int = 10
 
-  override def send(user: User, message: String): IO[Unit] =
-    topic
-      .publish1(ChatEvent.Message(user, message))
-      .void *> logger.info(s"User ${user.name} sent a message")
+  override def subscribe: Stream[IO, ChatEvent] = topic.subscribe(queueSize)
 
-  override def subscribe: Stream[IO, ChatEvent] =
-    topic.subscribe(queueSize)
-
-  override def join(user: User): IO[UserConnectResult] =
+  override def join(user: User): IO[UserConnectResult] = {
     users
       .modify(users =>
         if (users.contains(user))
@@ -52,6 +45,7 @@ final class ChatServiceImpl(
             .void *> logger.info(s"User ${user.name} joined the chat")
         case UserConnectResult.UsernameTaken => IO.unit
       }
+  }
 
   override def leave(user: User): IO[Unit] =
     users
@@ -59,5 +53,16 @@ final class ChatServiceImpl(
       .publish1(ChatEvent.UserLeft(user))
       .void *> logger.info(s"User ${user.name} left the chat")
 
-  override def getUsers(): IO[Set[User]] = users.get
+  override def handle(user: User, command: ClientCommand): IO[Unit] =
+    command match {
+      case ClientCommand.SendMessage(message) => emitBroadcast(user, message)
+      case _                                  =>
+        logger.warn(s"Unknown command from ${user.name}: $command")
+    }
+
+  private def emitBroadcast(sender: User, message: String): IO[Unit] = {
+    topic
+      .publish1(ChatEvent.Broadcast(sender, message))
+      .void *> logger.info(s"User ${sender.name} sent a message")
+  }
 }
