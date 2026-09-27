@@ -8,77 +8,53 @@ import io.circe.parser.decode
 import org.http4s.Uri
 import org.http4s.client.websocket.{WSConnectionHighLevel, WSFrame, WSRequest}
 import org.http4s.jdkhttpclient.JdkWSClient
+import fs2.Stream
+import chat.model.{ChatEvent, User}
 
-import chat.model.ChatEvent
+object ConsoleInput {
+  val commands: Stream[IO, ClientCommand] =
+    stdinUtf8[IO](4096)
+      .through(text.lines)
+      .map(ClientCommand.fromString)
+      .unNone
+
+}
 
 object Main extends IOApp {
-
+  private val errorMessage = "Usage: campfire-client <username>"
+  private val greetingMessage =
+    "Welcome to Campfire! Type a message and press Enter; /quit exits."
   private val serverUri = Uri.unsafeFromString("ws://127.0.0.1:8080")
-
-  private def retrieveUsername(args: List[String]): Option[String] =
-    args match {
-      case username :: Nil if username.trim.nonEmpty => Some(username.trim)
-      case _                                         => None
-    }
 
   override def run(args: List[String]): IO[ExitCode] =
     retrieveUsername(args) match {
       case Some(username) =>
-        runClient(username)
+        connect(username)
           .as(ExitCode.Success)
           .handleErrorWith { error =>
             IO.println(s"Connection failed: ${error.getMessage}")
               .as(ExitCode.Error)
           }
 
-      case _ =>
-        IO.println("Usage: campfire-client <username>")
-          .as(ExitCode.Error)
+      case None => IO.println(errorMessage).as(ExitCode.Error)
     }
 
-  private def runClient(username: String): IO[Unit] =
-    JdkWSClient.simple[IO].use { client =>
+  private def connect(username: String): IO[Unit] =
+    JdkWSClient.simple[IO].use { wsClient =>
       val uri = serverUri / "ws" / username
-
-      IO.println(s"Connecting to $uri ...") *>
-        client.connectHighLevel(WSRequest(uri)).use { connection =>
-          IO.println(
-            "Connected. Type a message and press Enter; /quit exits."
-          ) *>
-            IO.race(
-              sendMessages(connection),
-              receiveEvents(connection, username)
-            ).void
+      wsClient
+        .connectHighLevel(WSRequest(uri))
+        .use { connection =>
+          val processor = ConsoleEventProcessor(username)
+          ChatClient(connection, processor.process)
+            .run(ConsoleInput.commands)
+            .guarantee(IO.println("Disconnected."))
         }
     }
 
-  private def sendMessages(connection: WSConnectionHighLevel[IO]): IO[Unit] =
-    stdinUtf8[IO](4096)
-      .through(text.lines)
-      .takeWhile(_ != "/quit")
-      .filter(_.nonEmpty)
-      .evalMap(message => connection.send(WSFrame.Text(message)))
-      .compile
-      .drain
-
-  private def receiveEvents(
-      connection: WSConnectionHighLevel[IO],
-      username: String
-  ): IO[Unit] =
-    connection.receiveStream
-      .collect { case WSFrame.Text(payload, _) => payload }
-      .evalMap(payload => render(payload, username).traverse_(IO.println))
-      .compile
-      .drain
-
-  private def render(payload: String, username: String): Option[String] =
-    decode[ChatEvent](payload).fold(
-      _ => Some(s"[server] $payload"),
-      {
-        case ChatEvent.UserJoined(user) => Some(s"* ${user.name} joined")
-        case ChatEvent.UserLeft(user)   => Some(s"* ${user.name} left")
-        case ChatEvent.Message(user, _) if user.name == username => None
-        case ChatEvent.Message(user, text) => Some(s"${user.name}: $text")
-      }
-    )
+  private def retrieveUsername(args: List[String]): Option[String] =
+    args match {
+      case username :: Nil if username.trim.nonEmpty => Some(username.trim)
+      case _                                         => None
+    }
 }
