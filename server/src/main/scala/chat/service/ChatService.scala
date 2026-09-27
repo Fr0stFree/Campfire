@@ -5,6 +5,7 @@ import fs2.Stream
 import fs2.concurrent.Topic
 import cats.effect.Ref
 import org.typelevel.log4cats.Logger
+import cats.effect.Clock
 
 trait ChatService {
   def handle(user: User, command: ClientCommand): IO[Unit]
@@ -40,18 +41,24 @@ final class ChatServiceImpl(
       )
       .flatTap {
         case UserConnectResult.Connected =>
-          topic
-            .publish1(ChatEvent.UserJoined(user))
-            .void *> logger.info(s"User ${user.name} joined the chat")
+          Clock[IO].realTimeInstant.flatMap { timestamp =>
+            topic
+              .publish1(ChatEvent.UserJoined(user, timestamp))
+              .void *>
+              logger.info(s"User ${user.name} joined the chat")
+          }
         case UserConnectResult.UsernameTaken => IO.unit
       }
   }
 
-  override def leave(user: User): IO[Unit] =
-    users
-      .update(_.excl(user)) *> topic
-      .publish1(ChatEvent.UserLeft(user))
-      .void *> logger.info(s"User ${user.name} left the chat")
+  override def leave(user: User): IO[Unit] = {
+    for {
+      _ <- users.update(_.excl(user))
+      time <- Clock[IO].realTimeInstant
+      _ <- topic.publish1(ChatEvent.UserLeft(user, time))
+      _ <- logger.info(s"User ${user.name} left the chat")
+    } yield ()
+  }
 
   override def handle(user: User, command: ClientCommand): IO[Unit] =
     command match {
@@ -61,8 +68,10 @@ final class ChatServiceImpl(
     }
 
   private def emitBroadcast(sender: User, message: String): IO[Unit] = {
-    topic
-      .publish1(ChatEvent.Broadcast(sender, message))
-      .void *> logger.info(s"User ${sender.name} sent a message")
+    for {
+      time <- Clock[IO].realTimeInstant
+      _ <- topic.publish1(ChatEvent.Broadcast(sender, message, time))
+      _ <- logger.info(s"User ${sender.name} sent a message")
+    } yield ()
   }
 }

@@ -11,6 +11,7 @@ import chat.model.{UserConnectResult, User, ClientCommand}
 import chat.service.ChatService
 import org.typelevel.log4cats.Logger
 import io.circe.parser.decode
+import cats.effect.Clock
 
 final class WebSocketChat(
     wsb: WebSocketBuilder2[IO],
@@ -18,12 +19,14 @@ final class WebSocketChat(
 )(using logger: Logger[IO]) {
 
   def connect(user: User): IO[Response[IO]] = {
-    chat.join(user).flatMap {
-      case UserConnectResult.Connected =>
-        wsb.build(handleSending(user), handleReceiving(user))
-      case UserConnectResult.UsernameTaken =>
-        Conflict(s"Username '${user.name}' is already taken")
-    }
+    chat
+      .join(user)
+      .flatMap {
+        case UserConnectResult.Connected =>
+          wsb.build(handleSending(user), handleReceiving(user))
+        case UserConnectResult.UsernameTaken =>
+          Conflict(s"Username '${user.name}' is already taken")
+      }
   }
 
   private def handleSending(user: User) = {
