@@ -31,7 +31,9 @@ final class ChatClient(
     commands
       .takeWhile(_ != ConsoleCommand.Quit)
       .collect { case ConsoleCommand.Send(command) => command }
-      .evalMap(command => connection.send(WSFrame.Text(command.asJson.noSpaces)))
+      .evalMap(command =>
+        connection.send(WSFrame.Text(command.asJson.noSpaces))
+      )
       .compile
       .drain *>
       connection.send(WSFrame.Close(1000, "Client quit")) *>
@@ -50,6 +52,9 @@ final class ChatClient(
   private def handlePayload(payload: String): IO[Unit] =
     decode[ChatEvent](payload) match {
       case Right(event) => onEvent(event)
-      case Left(_)      => IO.println(s"[server] $payload")
+      case Left(error) =>
+        IO.println(
+          s"Failed to decode server event: ${error.getMessage}\n$payload"
+        )
     }
 }
