@@ -8,6 +8,12 @@ enum ChatEvent {
   case UserJoined(user: User, timestamp: Instant)
   case UserLeft(user: User, timestamp: Instant)
   case Broadcast(sender: User, message: String, timestamp: Instant)
+  case DirectMessage(
+      sender: User,
+      recipient: User,
+      message: String,
+      timestamp: Instant
+  )
 }
 
 object ChatEvent {
@@ -35,6 +41,14 @@ object ChatEvent {
         "message" -> Json.fromString(message),
         "timestamp" -> timestamp.asJson
       )
+    case ChatEvent.DirectMessage(sender, recipient, message, timestamp) =>
+      Json.obj(
+        "type" -> Json.fromString("direct_message"),
+        "sender" -> Json.fromString(sender.name),
+        "recipient" -> Json.fromString(recipient.name),
+        "message" -> Json.fromString(message),
+        "timestamp" -> timestamp.asJson
+      )
   }
 
   given Decoder[ChatEvent] = Decoder.instance { cursor =>
@@ -49,6 +63,11 @@ object ChatEvent {
           cursor
             .get[String]("message")
             .map(text => ChatEvent.Broadcast(User(username), text, timestamp))
+        case "direct_message" =>
+          for {
+            recipient <- cursor.get[String]("recipient")
+            message <- cursor.get[String]("message")
+          } yield ChatEvent.DirectMessage(User(username), User(recipient), message, timestamp)
         case unknown =>
           Left(
             io.circe.DecodingFailure(

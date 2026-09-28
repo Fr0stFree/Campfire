@@ -15,7 +15,6 @@ object ConsoleCommand {
       case "/users" => Some(ConsoleCommand.Send(ClientCommand.ListUsers))
       case message if message.startsWith("/") => None // Unknown command
       case message                            =>
-        Some(ConsoleCommand.Send(ClientCommand.SendMessage(message)))
+        Some(ConsoleCommand.Send(ClientCommand.SendBroadcastMessage(message)))
     }
 }
-

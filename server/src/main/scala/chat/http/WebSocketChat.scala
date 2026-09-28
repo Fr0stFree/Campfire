@@ -7,7 +7,7 @@ import org.http4s.Response
 import org.http4s.dsl.io.*
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
-import chat.model.{UserConnectResult, User, ClientCommand}
+import chat.model.{User, ClientCommand, UserSession, UserJoinError}
 import chat.service.ChatService
 import org.typelevel.log4cats.Logger
 import io.circe.parser.decode
@@ -21,32 +21,50 @@ final class WebSocketChat(
   def connect(user: User): IO[Response[IO]] = {
     chat
       .join(user)
-      .flatMap {
-        case UserConnectResult.Connected =>
-          wsb.build(handleSending(user), handleReceiving(user))
-        case UserConnectResult.UsernameTaken =>
-          Conflict(s"Username '${user.name}' is already taken")
-      }
+      .foldF(
+        error => handleConnectionError(user, error),
+        session => wsb.build(handleSending(session), handleReceiving(session))
+      )
+  }
+  private def handleConnectionError(
+      user: User,
+      error: UserJoinError
+  ): IO[Response[IO]] = {
+    error match {
+      case UserJoinError.UsernameTaken(username) =>
+        Conflict(s"Username '${username}' is already taken")
+      case UserJoinError.InvalidUsername(username) =>
+        BadRequest(
+          s"Invalid username '${username}'. Username must be 3-20 alphanumeric characters."
+        )
+    }
   }
 
-  private def handleSending(user: User) = {
-    chat.subscribe
+  private def handleSending(
+      session: UserSession
+  ): Stream[IO, WebSocketFrame] = {
+    Stream
+      .fromQueueUnterminated(session.outgoing)
       .map(event => WebSocketFrame.Text(event.asJson.noSpaces))
-      .onFinalize(chat.leave(user))
+      .onFinalize(chat.leave(session))
   }
 
-  private def handleReceiving(user: User): Pipe[IO, WebSocketFrame, Unit] = {
+  private def handleReceiving(
+      session: UserSession
+  ): Pipe[IO, WebSocketFrame, Unit] = {
     _.evalMap {
-      case WebSocketFrame.Text(payload, _) => handlePayload(user, payload)
+      case WebSocketFrame.Text(payload, _) => handlePayload(session, payload)
       case _                               => IO.unit
     }
   }
 
-  private def handlePayload(user: User, payload: String): IO[Unit] = {
+  private def handlePayload(session: UserSession, payload: String): IO[Unit] = {
     decode[ClientCommand](payload) match {
-      case Right(command) => chat.handle(user, command)
+      case Right(command) => chat.handle(session, command)
       case Left(error)    =>
-        logger.warn(s"Invalid command from ${user.name}: ${error.getMessage}")
+        logger.warn(
+          s"Invalid command from ${session.user.name}: ${error.getMessage}"
+        )
     }
   }
 }
