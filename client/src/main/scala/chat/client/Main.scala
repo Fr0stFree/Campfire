@@ -2,23 +2,11 @@ package chat.client
 
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.syntax.all.*
-import fs2.io.stdinUtf8
-import fs2.text
-import io.circe.parser.decode
+import chat.client.console.{Console, ConsoleEventProcessor, ConsoleInput}
+import chat.client.transport.ChatClient
 import org.http4s.Uri
-import org.http4s.client.websocket.{WSConnectionHighLevel, WSFrame, WSRequest}
+import org.http4s.client.websocket.WSRequest
 import org.http4s.jdkhttpclient.JdkWSClient
-import fs2.Stream
-import chat.model.{ChatEvent, User}
-
-object ConsoleInput {
-  val commands: Stream[IO, ConsoleCommand] =
-    stdinUtf8[IO](4096)
-      .through(text.lines)
-      .map(ConsoleCommand.fromString)
-      .unNone
-
-}
 
 object Main extends IOApp {
   private val errorMessage = "Usage: campfire-client <username>"
@@ -40,15 +28,16 @@ object Main extends IOApp {
     }
 
   private def connect(username: String): IO[Unit] =
-    JdkWSClient.simple[IO].use { wsClient =>
-      val uri = serverUri / "ws" / username
-      wsClient
-        .connect(WSRequest(uri))
-        .use { connection =>
-          val processor = ConsoleEventProcessor(username)
-          ChatClient(connection, processor.process)
-            .run(ConsoleInput.commands)
-            .guarantee(IO.println("Disconnected."))
+    Console.resource.use { console =>
+      console.printLine(greetingMessage) *>
+        JdkWSClient.simple[IO].use { wsClient =>
+          val uri = serverUri / "ws" / username
+          wsClient.connect(WSRequest(uri)).use { connection =>
+            val processor = ConsoleEventProcessor(username, console)
+            ChatClient(connection, processor.process, console.printLine)
+              .run(ConsoleInput.commands(console))
+              .guarantee(console.printLine("Disconnected."))
+          }
         }
     }
 

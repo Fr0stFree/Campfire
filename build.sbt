@@ -8,6 +8,9 @@ lazy val http4sJdkClientVersion = "0.10.0"
 lazy val circeVersion = "0.14.14"
 lazy val log4catsVersion = "2.8.0"
 lazy val logbackVersion = "1.6.3"
+lazy val jlineVersion = "3.26.0"
+lazy val munitVersion = "1.0.0"
+lazy val munitCatsEffectVersion = "2.0.0"
 
 lazy val root = (project in file("."))
   .aggregate(server, client, shared)
@@ -22,7 +25,7 @@ lazy val shared = (project in file("shared"))
     libraryDependencies ++= Seq(
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-generic" % circeVersion,
-      "io.circe" %% "circe-parser" % circeVersion,
+      "io.circe" %% "circe-parser" % circeVersion
     )
   )
 
@@ -36,7 +39,8 @@ lazy val server = (project in file("server"))
       "org.http4s" %% "http4s-dsl" % http4sVersion,
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.typelevel" %% "log4cats-slf4j" % log4catsVersion,
-      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime
+      "ch.qos.logback" % "logback-classic" % logbackVersion % Runtime,
+      "org.typelevel" %% "munit-cats-effect" % munitCatsEffectVersion % Test
     )
   )
 
@@ -49,5 +53,7 @@ lazy val client = (project in file("client"))
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
       "org.http4s" %% "http4s-jdk-http-client" % http4sJdkClientVersion,
+      "org.jline" % "jline" % jlineVersion,
+      "org.scalameta" %% "munit" % munitVersion % Test
     )
   )

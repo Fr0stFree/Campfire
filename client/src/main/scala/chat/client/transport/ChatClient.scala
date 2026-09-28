@@ -1,7 +1,9 @@
-package chat.client
+package chat.client.transport
 
 import cats.effect.{Deferred, IO}
 import cats.syntax.all.*
+import chat.client.console.ConsoleCommand
+import chat.model.ChatEvent
 import fs2.Stream
 import io.circe.parser.decode
 import io.circe.syntax.*
@@ -9,22 +11,21 @@ import org.http4s.client.websocket.{WSConnection, WSFrame}
 
 import scala.concurrent.duration.*
 
-import chat.model.ChatEvent
-
 final class ChatClient(
     connection: WSConnection[IO],
-    onEvent: ChatEvent => IO[Unit]
+    onEvent: ChatEvent => IO[Unit],
+    onInvalidEvent: String => IO[Unit]
 ) {
 
   def run(commands: Stream[IO, ConsoleCommand]): IO[Unit] =
     Deferred[IO, Unit].flatMap { closeReceived =>
       IO.race(
-        sendMessages(commands, closeReceived),
+        sendCommands(commands, closeReceived),
         receiveEvents(closeReceived)
       ).void
     }
 
-  private def sendMessages(
+  private def sendCommands(
       commands: Stream[IO, ConsoleCommand],
       closeReceived: Deferred[IO, Unit]
   ): IO[Unit] =
@@ -52,9 +53,7 @@ final class ChatClient(
   private def handlePayload(payload: String): IO[Unit] =
     decode[ChatEvent](payload) match {
       case Right(event) => onEvent(event)
-      case Left(error) =>
-        IO.println(
-          s"Failed to decode server event: ${error.getMessage}\n$payload"
-        )
+      case Left(error)  =>
+        onInvalidEvent(s"Failed to decode event: ${error.getMessage}\n$payload")
     }
 }

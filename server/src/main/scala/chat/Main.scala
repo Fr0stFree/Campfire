@@ -20,7 +20,7 @@ object Main extends IOApp.Simple {
     new Router(chat, ws).routes.orNotFound
   }
 
-  private def runServer(chat: ChatService): IO[Unit] =
+  private def runServer(chat: ChatService): IO[Unit] = {
     EmberServerBuilder
       .default[IO]
       .withHost(ipv4"127.0.0.1")
@@ -28,6 +28,7 @@ object Main extends IOApp.Simple {
       .withHttpWebSocketApp(httpApp(chat))
       .build
       .useForever
+  }
 
   override def run: IO[Unit] =
     for {

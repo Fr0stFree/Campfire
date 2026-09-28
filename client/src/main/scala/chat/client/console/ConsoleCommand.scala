@@ -1,4 +1,4 @@
-package chat.client
+package chat.client.console
 
 import chat.model.ClientCommand
 
@@ -9,30 +9,27 @@ enum ConsoleCommand {
 
 object ConsoleCommand {
 
-  def fromString(input: String): Option[ConsoleCommand] =
+  def parse(input: String): Option[ConsoleCommand] =
     input.trim match {
       case ""       => None
       case "/quit"  => Some(ConsoleCommand.Quit)
       case "/users" => Some(ConsoleCommand.Send(ClientCommand.ListUsers))
       case input if input.startsWith("/msg ") => parseDirectMessage(input)
-      case message if message.startsWith("/") => None
+      case input if input.startsWith("/")     => None
       case message                            =>
         Some(
           ConsoleCommand.Send(ClientCommand.SendBroadcastMessage(message))
         )
     }
 
-  private def parseDirectMessage(
-      input: String
-  ): Option[ConsoleCommand] =
+  private def parseDirectMessage(input: String): Option[ConsoleCommand] =
     input.split("\\s+", 3) match {
-      case Array("/msg", recipient, message) =>
+      case Array("/msg", recipient, message) if message.trim.nonEmpty =>
         Some(
           ConsoleCommand.Send(
-            ClientCommand.SendDirectMessage(recipient, message)
+            ClientCommand.SendDirectMessage(recipient, message.trim)
           )
         )
-
       case _ => None
     }
 }

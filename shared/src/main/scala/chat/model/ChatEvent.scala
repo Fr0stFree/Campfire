@@ -16,6 +16,7 @@ enum ChatEvent {
       message: String,
       timestamp: Instant
   )
+  case UsersListed(id: UUID, users: List[User], timestamp: Instant)
   case MessageAccepted(id: UUID, messageId: UUID, timestamp: Instant)
   case MessageRejected(
       id: UUID,
@@ -60,6 +61,13 @@ object ChatEvent {
         "sender" -> Json.fromString(sender.name),
         "recipient" -> Json.fromString(recipient.name),
         "message" -> Json.fromString(message),
+        "timestamp" -> timestamp.asJson
+      )
+    case ChatEvent.UsersListed(id, users, timestamp) =>
+      Json.obj(
+        "id" -> Json.fromString(id.toString()),
+        "type" -> Json.fromString("users_listed"),
+        "users" -> users.asJson,
         "timestamp" -> timestamp.asJson
       )
     case ChatEvent.MessageAccepted(id, messageId, timestamp) =>
@@ -129,6 +137,11 @@ object ChatEvent {
             message,
             timestamp
           )
+
+        case "users_listed" =>
+          cursor
+            .get[List[User]]("users")
+            .map(users => ChatEvent.UsersListed(id, users, timestamp))
 
         case "message_accepted" =>
           cursor

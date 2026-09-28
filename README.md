@@ -17,6 +17,7 @@ effects, streaming, concurrency, and network programming in Scala.
 - Concurrent event distribution with FS2.
 - Shared models and JSON codecs for the server and client.
 - Command-line client module.
+- Broadcasts, direct messages, and an online-user list (`/users`).
 
 ## **Tech Stack**
 
@@ -45,6 +46,8 @@ campfire/
 - `server` contains the JVM application, HTTP routes, WebSocket handling, and
   chat service.
 - `client` contains the command-line client.
+  Its `console` package owns terminal I/O and presentation, while `transport`
+  owns the WebSocket protocol loop.
 - `shared` contains models and JSON codecs used by both the server and client.
 
 ## **Running**
@@ -89,7 +92,8 @@ sbt 'client/run alice'
 ```
 
 Type a message and press Enter to send it. Enter `/quit` (or send EOF with
-Ctrl-D) to disconnect.
+Ctrl-D) to disconnect. Use `/msg <username> <message>` for a direct message and
+`/users` to show connected users.
 
 ## **Architecture**
 
