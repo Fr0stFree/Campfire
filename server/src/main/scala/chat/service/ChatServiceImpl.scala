@@ -29,7 +29,9 @@ private[service] final class ChatServiceImpl(
       .modify { current =>
         val isRegistered = current.get(session.user.name).contains(session)
         val updated =
-          if isRegistered then current.removed(session.user.name) else current
+          if isRegistered
+          then current.removed(session.user.name)
+          else current
         (updated, isRegistered)
       }
       .flatMap(removed =>
@@ -67,36 +69,42 @@ private[service] final class ChatServiceImpl(
 
   private def handleDirectMessage(
       sender: UserSession,
-      recipient: String,
+      recipientName: String,
       message: String
   ): IO[Unit] =
     for {
-      messageId <- UUIDGen.randomUUID[IO]
       currentSessions <- sessions.get
-      _ <- currentSessions.get(recipient) match {
-        case Some(recipientSession) =>
+      messageId <- UUIDGen.randomUUID[IO]
+      _ <- currentSessions.get(recipientName) match {
+        case Some(recipient) =>
           emitDirectMessageEvent(
-            messageId,
             sender,
-            recipientSession,
+            recipient,
+            destination = recipient,
             message
-          ) *> emitMessageAcceptedEvent(sender, messageId)
+          ) *> emitDirectMessageEvent(
+            sender,
+            recipient,
+            destination = sender,
+            message
+          )
         case None =>
           emitMessageRejectedEvent(
             sender,
-            messageId,
-            s"Recipient '$recipient' not found"
+            messageId, // TODO: Consider generating a unique ID for the rejected message
+            s"Recipient '$recipientName' not found"
           )
       }
     } yield ()
 
   private def emitDirectMessageEvent(
-      id: UUID,
       sender: UserSession,
       recipient: UserSession,
+      destination: UserSession,
       message: String
   ): IO[ChatEvent.DirectMessage] =
     for {
+      id <- UUIDGen.randomUUID[IO]
       time <- Clock[IO].realTimeInstant
       event: ChatEvent.DirectMessage = ChatEvent.DirectMessage(
         id,
@@ -105,25 +113,25 @@ private[service] final class ChatServiceImpl(
         message,
         time
       )
-      _ <- recipient.outgoing.offer(event)
+      _ <- sendTo(event, destination)
       _ <- logger.info(
         s"User ${sender.user.name} sent a direct message to ${recipient.user.name}"
       )
     } yield event
 
   private def emitUsersListedEvent(
-      session: UserSession
+      destination: UserSession
   ): IO[ChatEvent.UsersListed] =
     for {
       id <- UUIDGen.randomUUID[IO]
       time <- Clock[IO].realTimeInstant
       users <- sessions.get.map(_.values.map(_.user).toList.sortBy(_.name))
       event: ChatEvent.UsersListed = ChatEvent.UsersListed(id, users, time)
-      _ <- session.outgoing.offer(event)
+      _ <- sendTo(event, destination)
     } yield event
 
   private def emitMessageAcceptedEvent(
-      session: UserSession,
+      destination: UserSession,
       messageId: UUID
   ): IO[ChatEvent.MessageAccepted] =
     for {
@@ -131,11 +139,11 @@ private[service] final class ChatServiceImpl(
       time <- Clock[IO].realTimeInstant
       event: ChatEvent.MessageAccepted =
         ChatEvent.MessageAccepted(id, messageId, time)
-      _ <- session.outgoing.offer(event)
+      _ <- sendTo(event, destination)
     } yield event
 
   private def emitMessageRejectedEvent(
-      session: UserSession,
+      destination: UserSession,
       messageId: UUID,
       reason: String
   ): IO[ChatEvent.MessageRejected] =
@@ -144,9 +152,9 @@ private[service] final class ChatServiceImpl(
       time <- Clock[IO].realTimeInstant
       event: ChatEvent.MessageRejected =
         ChatEvent.MessageRejected(id, messageId, time, reason)
-      _ <- session.outgoing.offer(event)
+      _ <- sendTo(event, destination)
       _ <- logger.info(
-        s"Message $messageId rejected for user ${session.user.name}: $reason"
+        s"Message $messageId rejected for user ${destination.user.name}: $reason"
       )
     } yield event
 
@@ -155,7 +163,7 @@ private[service] final class ChatServiceImpl(
       id <- UUIDGen.randomUUID[IO]
       time <- Clock[IO].realTimeInstant
       event: ChatEvent.UserJoined = ChatEvent.UserJoined(id, user, time)
-      _ <- broadcast(event)
+      _ <- sendAll(event)
       _ <- logger.info(s"User ${user.name} joined the chat")
     } yield event
 
@@ -164,7 +172,7 @@ private[service] final class ChatServiceImpl(
       id <- UUIDGen.randomUUID[IO]
       time <- Clock[IO].realTimeInstant
       event: ChatEvent.UserLeft = ChatEvent.UserLeft(id, user, time)
-      _ <- broadcast(event)
+      _ <- sendAll(event)
       _ <- logger.info(s"User ${user.name} left the chat")
     } yield event
 
@@ -181,10 +189,15 @@ private[service] final class ChatServiceImpl(
         message,
         time
       )
-      _ <- broadcast(event)
+      _ <- sendAll(event)
       _ <- logger.info(s"User ${sender.name} sent a message")
     } yield event
 
-  private def broadcast(event: ChatEvent): IO[Unit] =
+  private def sendAll(event: ChatEvent): IO[Unit] = {
     sessions.get.flatMap(_.values.toList.traverse_(_.outgoing.offer(event)))
+  }
+
+  private def sendTo(event: ChatEvent, destination: UserSession): IO[Unit] = {
+    destination.outgoing.offer(event)
+  }
 }
