@@ -1,4 +1,4 @@
-package chat.model
+package chat.service
 
 import java.time.Instant
 import cats.effect.std.Queue

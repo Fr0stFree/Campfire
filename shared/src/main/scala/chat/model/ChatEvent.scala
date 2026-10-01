@@ -16,7 +16,7 @@ enum ChatEvent {
       message: String,
       timestamp: Instant
   )
-  case UsersListed(id: UUID, users: List[User], timestamp: Instant)
+  case UsersListed(id: UUID, users: Seq[User], timestamp: Instant)
   case MessageAccepted(id: UUID, messageId: UUID, timestamp: Instant)
   case MessageRejected(
       id: UUID,

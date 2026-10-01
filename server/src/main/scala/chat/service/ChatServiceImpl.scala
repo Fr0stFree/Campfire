@@ -2,40 +2,38 @@ package chat.service
 
 import cats.data.EitherT
 import cats.effect.std.UUIDGen
-import cats.effect.{Clock, IO, Ref}
+import cats.effect.{Clock, IO}
 import cats.syntax.all.*
-import chat.model.{ChatEvent, ClientCommand, User, UserJoinError, UserSession}
+import chat.model.{ChatEvent, ClientCommand, User}
+import chat.storage.{Storage, StorageError}
 import org.typelevel.log4cats.Logger
 
 import java.util.UUID
 
 private[service] final class ChatServiceImpl(
-    sessions: Ref[IO, Map[String, UserSession]]
+    sessions: Storage.UserSessions
 )(using logger: Logger[IO])
     extends ChatService {
 
   private val queueSize = 10
 
   override def join(user: User): EitherT[IO, UserJoinError, UserSession] =
+    val toUserNameTakenError = (error: StorageError.UserSessionAlreadyExists) =>
+      UserJoinError.UsernameTaken(error.username)
+
     for {
       _ <- EitherT.fromEither[IO](validateUsername(user.name))
       session <- EitherT.liftF(UserSession.create(user, queueSize))
-      _ <- registerSession(session)
+      _ <- sessions.create(session).leftMap(toUserNameTakenError)
       _ <- EitherT.liftF(emitUserJoinedEvent(user))
     } yield session
 
   override def leave(session: UserSession): IO[Unit] =
     sessions
-      .modify { current =>
-        val isRegistered = current.get(session.user.name).contains(session)
-        val updated =
-          if isRegistered
-          then current.removed(session.user.name)
-          else current
-        (updated, isRegistered)
-      }
-      .flatMap(removed =>
-        IO.whenA(removed)(emitUserLeftEvent(session.user).void)
+      .delete(session)
+      .foldF(
+        _ => IO.unit,
+        _ => emitUserLeftEvent(session.user).void
       )
 
   override def handle(
@@ -55,28 +53,15 @@ private[service] final class ChatServiceImpl(
     if username.matches("^[a-zA-Z0-9]{3,20}$") then Right(())
     else Left(UserJoinError.InvalidUsername(username))
 
-  private def registerSession(
-      session: UserSession
-  ): EitherT[IO, UserJoinError, Unit] =
-    EitherT {
-      sessions.modify { current =>
-        val username = session.user.name
-        if current.contains(username) then
-          (current, Left(UserJoinError.UsernameTaken(username)))
-        else (current.updated(username, session), Right(()))
-      }
-    }
-
   private def handleDirectMessage(
       sender: UserSession,
       recipientName: String,
       message: String
   ): IO[Unit] =
     for {
-      currentSessions <- sessions.get
       messageId <- UUIDGen.randomUUID[IO]
-      _ <- currentSessions.get(recipientName) match {
-        case Some(recipient) =>
+      _ <- sessions.get(recipientName).value.flatMap {
+        case Right(recipient) =>
           emitDirectMessageEvent(
             sender,
             recipient,
@@ -88,7 +73,7 @@ private[service] final class ChatServiceImpl(
             destination = sender,
             message
           )
-        case None =>
+        case Left(_) =>
           emitMessageRejectedEvent(
             sender,
             messageId, // TODO: Consider generating a unique ID for the rejected message
@@ -125,7 +110,7 @@ private[service] final class ChatServiceImpl(
     for {
       id <- UUIDGen.randomUUID[IO]
       time <- Clock[IO].realTimeInstant
-      users <- sessions.get.map(_.values.map(_.user).toList.sortBy(_.name))
+      users <- sessions.list.map(_.map(_.user).sortBy(_.name))
       event: ChatEvent.UsersListed = ChatEvent.UsersListed(id, users, time)
       _ <- sendTo(event, destination)
     } yield event
@@ -194,7 +179,11 @@ private[service] final class ChatServiceImpl(
     } yield event
 
   private def sendAll(event: ChatEvent): IO[Unit] = {
-    sessions.get.flatMap(_.values.toList.traverse_(_.outgoing.offer(event)))
+    sessions.list.flatMap { allSessions =>
+      allSessions.toSeq.traverse_ { session =>
+        sendTo(event, session)
+      }
+    }
   }
 
   private def sendTo(event: ChatEvent, destination: UserSession): IO[Unit] = {

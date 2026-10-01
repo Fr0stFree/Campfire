@@ -1,8 +1,9 @@
 package chat.service
 
 import cats.data.EitherT
-import cats.effect.{IO, Ref}
-import chat.model.{ClientCommand, User, UserJoinError, UserSession}
+import cats.effect.IO
+import chat.model.{ClientCommand, User}
+import chat.storage.Storage
 import org.typelevel.log4cats.Logger
 
 trait ChatService {
@@ -12,9 +13,8 @@ trait ChatService {
 }
 
 object ChatService {
-
-  def build(using Logger[IO]): IO[ChatService] =
-    Ref
-      .of[IO, Map[String, UserSession]](Map.empty)
-      .map(new ChatServiceImpl(_))
+  def build(
+      sessions: Storage.UserSessions
+  )(using logger: Logger[IO]): IO[ChatService] =
+    IO(new ChatServiceImpl(sessions))
 }

@@ -7,13 +7,15 @@ import org.http4s.Response
 import org.http4s.dsl.io.*
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
-import chat.model.{User, ClientCommand, UserSession, UserJoinError}
+import chat.model.{User, ClientCommand}
+import chat.service.UserSession
+import chat.service.UserJoinError
 import chat.service.ChatService
 import org.typelevel.log4cats.Logger
 import io.circe.parser.decode
 import cats.effect.Clock
 
-final class WebSocketChat(
+final class WebSocketApp(
     wsb: WebSocketBuilder2[IO],
     chat: ChatService
 )(using logger: Logger[IO]) {

@@ -1,4 +1,4 @@
-package chat.model
+package chat.service
 
 enum UserJoinError {
   case UsernameTaken(username: String)
