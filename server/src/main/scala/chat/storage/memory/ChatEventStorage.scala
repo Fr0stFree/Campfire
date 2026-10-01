@@ -10,6 +10,10 @@ final class ChatEventStorage(
   override def save(event: ChatEvent): IO[Unit] = {
     events.update(_.appended(event))
   }
+
+  override def list: IO[Seq[ChatEvent]] = {
+    events.get
+  }
 }
 
 object ChatEventStorage {

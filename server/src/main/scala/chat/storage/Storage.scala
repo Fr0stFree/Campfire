@@ -24,5 +24,6 @@ object Storage {
 
   trait ChatEvents {
     def save(event: ChatEvent): IO[Unit]
+    def list: IO[Seq[ChatEvent]]
   }
 }

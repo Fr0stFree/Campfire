@@ -29,11 +29,28 @@ private[service] final class ChatServiceImpl(
       _ <- EitherT.liftF {
         for {
           event <- eventFactory.userJoined(user)
-          _ <- events.save(event)
           _ <- sendAll(event)
+          _ <- sendEventHistory(session)
+          _ <- events.save(event)
+          _ <- logger.info(s"User ${user.name} joined the chat")
         } yield ()
       }
     } yield session
+
+  private def sendEventHistory(session: UserSession): IO[Unit] =
+    for {
+      events <- events.list
+      _ <- events.traverse_ { event =>
+        event match {
+          case event: ChatEvent.Broadcast     => sendTo(event, session)
+          case event: ChatEvent.DirectMessage =>
+            if event.sender == session.user || event.recipient == session.user
+            then sendTo(event, session)
+            else IO.unit
+          case _ => IO.unit
+        }
+      }
+    } yield ()
 
   override def leave(session: UserSession): IO[Unit] =
     sessions
@@ -43,8 +60,8 @@ private[service] final class ChatServiceImpl(
         _ =>
           for {
             event <- eventFactory.userLeft(session.user)
-            _ <- events.save(event)
             _ <- sendAll(event)
+            _ <- events.save(event)
           } yield ()
       )
 
@@ -96,8 +113,8 @@ private[service] final class ChatServiceImpl(
   ): IO[Unit] =
     for {
       event <- eventFactory.broadcast(sender.user, message)
-      _ <- events.save(event)
       _ <- sendAll(event)
+      _ <- events.save(event)
     } yield ()
 
   private def handleUsersListedCommand(destination: UserSession): IO[Unit] =
