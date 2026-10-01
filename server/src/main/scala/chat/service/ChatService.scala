@@ -14,7 +14,8 @@ trait ChatService {
 
 object ChatService {
   def build(
-      sessions: Storage.UserSessions
-  )(using logger: Logger[IO]): IO[ChatService] =
-    IO(new ChatServiceImpl(sessions))
+      sessions: Storage.UserSessions,
+      events: Storage.ChatEvents
+  )(using logger: Logger[IO]): ChatService =
+    new ChatServiceImpl(sessions, events)
 }

@@ -51,10 +51,10 @@ final class ConsoleEventProcessor(
         val names = users.map(_.name).sorted.mkString(", ")
         s"${formatTime(timestamp)} ${Color.Green}Online:${Color.Reset} $names"
 
-      case ChatEvent.MessageRejected(_, _, timestamp, reason) =>
+      case ChatEvent.MessageRejected(_, timestamp, reason) =>
         s"${formatTime(timestamp)} ${Color.Red}** $reason **${Color.Reset}"
 
-      case ChatEvent.MessageAccepted(_, _, timestamp) =>
+      case ChatEvent.MessageAccepted(_, timestamp) =>
         s"${formatTime(timestamp)} ${Color.Green}Message delivered${Color.Reset}"
     }
 

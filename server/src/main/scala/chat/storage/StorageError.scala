@@ -1,6 +1,6 @@
 package chat.storage
 
 enum StorageError {
-  case UserSessionNotFound(username: String)
-  case UserSessionAlreadyExists(username: String)
+  case ObjectDoesNotExist(username: String)
+  case ObjectAlreadyExists(username: String)
 }

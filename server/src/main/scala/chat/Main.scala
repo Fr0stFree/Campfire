@@ -9,17 +9,19 @@ import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import chat.http.{WebSocketApp, HttpWsApp}
-import chat.storage.memory.UserSessionStorage
+import chat.storage.memory.{UserSessionStorage, ChatEventStorage}
 import chat.service.ChatService
 
 object Main extends IOApp.Simple {
   private given Logger[IO] = Slf4jLogger.getLogger[IO]
+  private val port = port"8080"
+  private val host = ipv4"127.0.0.1" // TODO: hide in config
 
   private def runServer(service: ChatService): IO[Unit] = {
     EmberServerBuilder
       .default[IO]
-      .withHost(ipv4"127.0.0.1")
-      .withPort(port"8080")
+      .withHost(host)
+      .withPort(port)
       .withHttpWebSocketApp(wsb => HttpWsApp.build(service, wsb))
       .build
       .useForever
@@ -27,9 +29,10 @@ object Main extends IOApp.Simple {
 
   override def run: IO[Unit] =
     for {
-      _ <- Logger[IO].info("Starting Campfire server on 127.0.0.1:8080")
+      _ <- Logger[IO].info(s"Starting Campfire server on $host:$port")
       sessionStorage <- UserSessionStorage.build
-      service <- ChatService.build(sessionStorage)
+      chatEventStorage <- ChatEventStorage.build
+      service = ChatService.build(sessionStorage, chatEventStorage)
       _ <- runServer(service)
     } yield ()
 }

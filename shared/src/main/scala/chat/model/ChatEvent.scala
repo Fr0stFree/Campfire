@@ -17,10 +17,9 @@ enum ChatEvent {
       timestamp: Instant
   )
   case UsersListed(id: UUID, users: Seq[User], timestamp: Instant)
-  case MessageAccepted(id: UUID, messageId: UUID, timestamp: Instant)
+  case MessageAccepted(id: UUID, timestamp: Instant)
   case MessageRejected(
       id: UUID,
-      messageId: UUID,
       timestamp: Instant,
       reason: String
   )
@@ -70,18 +69,16 @@ object ChatEvent {
         "users" -> users.asJson,
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.MessageAccepted(id, messageId, timestamp) =>
+    case ChatEvent.MessageAccepted(id, timestamp) =>
       Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("message_accepted"),
-        "message_id" -> Json.fromString(messageId.toString()),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.MessageRejected(id, messageId, timestamp, reason) =>
+    case ChatEvent.MessageRejected(id, timestamp, reason) =>
       Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("message_rejected"),
-        "message_id" -> Json.fromString(messageId.toString()),
         "reason" -> Json.fromString(reason),
         "timestamp" -> timestamp.asJson
       )
@@ -144,22 +141,13 @@ object ChatEvent {
             .map(users => ChatEvent.UsersListed(id, users, timestamp))
 
         case "message_accepted" =>
-          cursor
-            .get[UUID]("message_id")
-            .map(messageId =>
-              ChatEvent.MessageAccepted(
-                id,
-                messageId,
-                timestamp
-              )
-            )
+          Right(ChatEvent.MessageAccepted(id, timestamp))
+
         case "message_rejected" =>
           for {
-            messageId <- cursor.get[UUID]("message_id")
             reason <- cursor.get[String]("reason")
           } yield ChatEvent.MessageRejected(
             id,
-            messageId,
             timestamp,
             reason
           )
