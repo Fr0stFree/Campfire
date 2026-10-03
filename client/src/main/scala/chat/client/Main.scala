@@ -5,8 +5,9 @@ import org.http4s.Uri
 import org.http4s.client.websocket.WSRequest
 import org.http4s.jdkhttpclient.JdkWSClient
 
-import chat.client.console.{Console, ConsoleEventProcessor, ConsoleInput}
+import chat.client.console.{Console, ConsoleEventRenderer}
 import chat.client.transport.ChatClient
+import chat.model.ChatEvent
 
 object Main extends IOApp:
   private val errorMessage = "Usage: campfire-client <username>"
@@ -24,9 +25,11 @@ object Main extends IOApp:
     console.printLine(greetingMessage) *> JdkWSClient.simple[IO].use { wsClient =>
       val uri = serverUri / "ws" / username
       wsClient.connect(WSRequest(uri)).use { connection =>
-        val processor = ConsoleEventProcessor(username, console)
-        ChatClient(connection, processor.process, console.printLine)
-          .run(ConsoleInput.commands(console)).guarantee(console.printLine("Disconnected."))
+        val renderer = ConsoleEventRenderer(username)
+        val displayEvent =
+          (event: ChatEvent) => renderer.render(event).fold(IO.unit)(console.printLine)
+        ChatClient(connection, displayEvent, console.printLine).run(console.commands)
+          .guarantee(console.printLine("Disconnected."))
       }
     }
   }
