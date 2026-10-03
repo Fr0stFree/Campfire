@@ -1,8 +1,7 @@
 package chat.service
 
 import cats.data.EitherT
-import cats.effect.std.UUIDGen
-import cats.effect.{Clock, IO}
+import cats.effect.IO
 import cats.syntax.all.*
 import chat.model.{ChatEvent, ClientCommand, User}
 import chat.storage.{Storage, StorageError, ChatEventFilter}
@@ -15,7 +14,7 @@ private[service] final class ChatServiceImpl(
     logger: Logger[IO]
 ) extends ChatService {
 
-  private val eventFactory = ChatEventFactory()
+  private val eventFactory = new ChatEventFactory[IO]
   private val queueSize = 10
   private val usernameRegex = "^[a-zA-Z0-9]{3,20}$".r
   private val historyLimit = 10
@@ -77,7 +76,11 @@ private[service] final class ChatServiceImpl(
     sessions.get(recipientName).value.flatMap {
       case Right(recipient) => {
         for {
-          event <- eventFactory.directMessage(sender, recipient, message)
+          event <- eventFactory.directMessage(
+            sender.user,
+            recipient.user,
+            message
+          )
           _ <- IO.both(recipient.send(event), sender.send(event))
           _ <- events.save(event)
           _ <- logger.info(
@@ -88,7 +91,7 @@ private[service] final class ChatServiceImpl(
       case Left(_) => {
         for {
           reason = s"User '$recipientName' not found"
-          event <- eventFactory.messageRejected(sender, reason)
+          event <- eventFactory.messageRejected(reason)
           _ <- sender.send(event)
         } yield ()
       }
@@ -107,7 +110,7 @@ private[service] final class ChatServiceImpl(
   private def handleUsersListedCommand(destination: UserSession): IO[Unit] =
     for {
       users <- sessions.list.map(_.map(_.user).sortBy(_.name))
-      event <- eventFactory.usersListed(destination, users)
+      event <- eventFactory.usersListed(users)
       _ <- destination.send(event)
     } yield ()
 

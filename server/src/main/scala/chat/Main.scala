@@ -14,6 +14,7 @@ import chat.service.ChatService
 
 object Main extends IOApp.Simple {
   private given Logger[IO] = Slf4jLogger.getLogger[IO]
+
   private val port = port"8080"
   private val host = ipv4"127.0.0.1" // TODO: hide in config
 
