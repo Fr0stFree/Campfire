@@ -9,7 +9,9 @@ final case class UserSession(
     user: User,
     outgoing: Queue[IO, ChatEvent],
     connectedAt: Instant
-)
+) {
+  def send(event: ChatEvent): IO[Unit] = outgoing.offer(event)
+}
 
 object UserSession {
   def create(user: User, queueSize: Int): IO[UserSession] = {

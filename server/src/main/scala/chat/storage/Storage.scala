@@ -3,7 +3,18 @@ package chat.storage
 import cats.data.EitherT
 import cats.effect.IO
 import chat.service.UserSession
-import chat.model.ChatEvent
+import chat.model.{ChatEvent, User}
+
+final case class ChatEventFilter(
+    user: Option[User] = None,
+    limit: Option[Int] = None
+)
+
+object ChatEventFilter {
+  def apply(user: User, limit: Int): ChatEventFilter = {
+    ChatEventFilter(Some(user), Some(limit))
+  }
+}
 
 object Storage {
   trait UserSessions {
@@ -24,6 +35,6 @@ object Storage {
 
   trait ChatEvents {
     def save(event: ChatEvent): IO[Unit]
-    def list: IO[Seq[ChatEvent]]
+    def list(filter: ChatEventFilter): IO[Seq[ChatEvent]]
   }
 }

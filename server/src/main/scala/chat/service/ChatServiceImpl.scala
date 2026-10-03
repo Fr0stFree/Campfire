@@ -5,7 +5,7 @@ import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import chat.model.{ChatEvent, ClientCommand, User}
-import chat.storage.{Storage, StorageError}
+import chat.storage.{Storage, StorageError, ChatEventFilter}
 import org.typelevel.log4cats.Logger
 
 private[service] final class ChatServiceImpl(
@@ -18,6 +18,7 @@ private[service] final class ChatServiceImpl(
   private val eventFactory = ChatEventFactory()
   private val queueSize = 10
   private val usernameRegex = "^[a-zA-Z0-9]{3,20}$".r
+  private val historyLimit = 10
 
   override def join(user: User): EitherT[IO, UserJoinError, UserSession] =
     for {
@@ -28,29 +29,15 @@ private[service] final class ChatServiceImpl(
         .leftMap(error => UserJoinError.UsernameTaken(error.username))
       _ <- EitherT.liftF {
         for {
+          _ <- logger.info(s"User ${user.name} joined the chat")
           event <- eventFactory.userJoined(user)
           _ <- sendAll(event)
-          _ <- sendEventHistory(session)
           _ <- events.save(event)
-          _ <- logger.info(s"User ${user.name} joined the chat")
+          historyEvents <- events.list(ChatEventFilter(user, historyLimit))
+          _ <- historyEvents.traverse_(session.send)
         } yield ()
       }
     } yield session
-
-  private def sendEventHistory(session: UserSession): IO[Unit] =
-    for {
-      events <- events.list
-      _ <- events.traverse_ { event =>
-        event match {
-          case event: ChatEvent.Broadcast     => sendTo(event, session)
-          case event: ChatEvent.DirectMessage =>
-            if event.sender == session.user || event.recipient == session.user
-            then sendTo(event, session)
-            else IO.unit
-          case _ => IO.unit
-        }
-      }
-    } yield ()
 
   override def leave(session: UserSession): IO[Unit] =
     sessions
@@ -91,7 +78,7 @@ private[service] final class ChatServiceImpl(
       case Right(recipient) => {
         for {
           event <- eventFactory.directMessage(sender, recipient, message)
-          _ <- IO.both(sendTo(event, recipient), sendTo(event, sender))
+          _ <- IO.both(recipient.send(event), sender.send(event))
           _ <- events.save(event)
           _ <- logger.info(
             s"User ${sender.user.name} sent a direct message to ${recipient.user.name}"
@@ -102,7 +89,7 @@ private[service] final class ChatServiceImpl(
         for {
           reason = s"User '$recipientName' not found"
           event <- eventFactory.messageRejected(sender, reason)
-          _ <- sendTo(event, sender)
+          _ <- sender.send(event)
         } yield ()
       }
     }
@@ -121,18 +108,9 @@ private[service] final class ChatServiceImpl(
     for {
       users <- sessions.list.map(_.map(_.user).sortBy(_.name))
       event <- eventFactory.usersListed(destination, users)
-      _ <- sendTo(event, destination)
+      _ <- destination.send(event)
     } yield ()
 
-  private def sendAll(event: ChatEvent): IO[Unit] = {
-    sessions.list.flatMap { allSessions =>
-      allSessions.toSeq.traverse_ { session =>
-        sendTo(event, session)
-      }
-    }
-  }
-
-  private def sendTo(event: ChatEvent, destination: UserSession): IO[Unit] = {
-    destination.outgoing.offer(event)
-  }
+  private def sendAll(event: ChatEvent): IO[Unit] =
+    sessions.list.flatMap(_.traverse_(_.send(event)))
 }

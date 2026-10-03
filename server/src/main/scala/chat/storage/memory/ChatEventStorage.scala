@@ -1,8 +1,9 @@
 package chat.storage.memory
 
+import cats.syntax.all.*
 import cats.effect.{IO, Ref}
-import chat.storage.{Storage, StorageError}
-import chat.model.ChatEvent
+import chat.storage.{Storage, StorageError, ChatEventFilter}
+import chat.model.{ChatEvent, User}
 
 final class ChatEventStorage(
     events: Ref[IO, Seq[ChatEvent]]
@@ -11,9 +12,25 @@ final class ChatEventStorage(
     events.update(_.appended(event))
   }
 
-  override def list: IO[Seq[ChatEvent]] = {
-    events.get
-  }
+  override def list(filter: ChatEventFilter): IO[Seq[ChatEvent]] =
+    events.get.map { events =>
+      val filtered = filter.user match {
+        case Some(user) =>
+          events.filter {
+            case _: ChatEvent.Broadcast         => true
+            case event: ChatEvent.DirectMessage =>
+              event.sender == user || event.recipient == user
+            case _ => false
+          }
+        case None => events
+      }
+
+      filter.limit match {
+        case Some(limit) => filtered.takeRight(limit)
+        case None        => filtered
+      }
+    }
+
 }
 
 object ChatEventStorage {
