@@ -1,6 +1,5 @@
 package chat.storage
 
-enum StorageError {
+enum StorageError:
   case ObjectDoesNotExist(username: String)
   case ObjectAlreadyExists(username: String)
-}

@@ -1,60 +1,47 @@
 package chat.model
 
-import io.circe.syntax.*
-import io.circe.{Decoder, Encoder, Json}
 import java.time.Instant
 import java.util.UUID
 
-enum ChatEvent {
+import io.circe.syntax._
+import io.circe.{Decoder, Encoder, Json}
+
+enum ChatEvent:
   case UserJoined(id: UUID, user: User, timestamp: Instant)
   case UserLeft(id: UUID, user: User, timestamp: Instant)
   case Broadcast(id: UUID, sender: User, message: String, timestamp: Instant)
-  case DirectMessage(
-      id: UUID,
-      sender: User,
-      recipient: User,
-      message: String,
-      timestamp: Instant
-  )
+  case DirectMessage(id: UUID, sender: User, recipient: User, message: String, timestamp: Instant)
   case UsersListed(id: UUID, users: Seq[User], timestamp: Instant)
   case MessageAccepted(id: UUID, timestamp: Instant)
-  case MessageRejected(
-      id: UUID,
-      timestamp: Instant,
-      reason: String
-  )
-}
+  case MessageRejected(id: UUID, timestamp: Instant, reason: String)
 
-object ChatEvent {
+object ChatEvent:
   given Encoder[Instant] = Encoder.encodeString.contramap(_.toString)
-  given Decoder[Instant] =
-    Decoder.decodeString.emapTry(value => scala.util.Try(Instant.parse(value)))
+
+  given Decoder[Instant] = Decoder.decodeString
+    .emapTry(value => scala.util.Try(Instant.parse(value)))
 
   given Encoder[ChatEvent] = Encoder.instance {
-    case ChatEvent.UserJoined(id, user, timestamp) =>
-      Json.obj(
+    case ChatEvent.UserJoined(id, user, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("joined"),
         "username" -> Json.fromString(user.name),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.UserLeft(id, user, timestamp) =>
-      Json.obj(
+    case ChatEvent.UserLeft(id, user, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("left"),
         "username" -> Json.fromString(user.name),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.Broadcast(id, user, message, timestamp) =>
-      Json.obj(
+    case ChatEvent.Broadcast(id, user, message, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("broadcast"),
         "username" -> Json.fromString(user.name),
         "message" -> Json.fromString(message),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.DirectMessage(id, sender, recipient, message, timestamp) =>
-      Json.obj(
+    case ChatEvent.DirectMessage(id, sender, recipient, message, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("direct_message"),
         "sender" -> Json.fromString(sender.name),
@@ -62,21 +49,18 @@ object ChatEvent {
         "message" -> Json.fromString(message),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.UsersListed(id, users, timestamp) =>
-      Json.obj(
+    case ChatEvent.UsersListed(id, users, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("users_listed"),
         "users" -> users.asJson,
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.MessageAccepted(id, timestamp) =>
-      Json.obj(
+    case ChatEvent.MessageAccepted(id, timestamp) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("message_accepted"),
         "timestamp" -> timestamp.asJson
       )
-    case ChatEvent.MessageRejected(id, timestamp, reason) =>
-      Json.obj(
+    case ChatEvent.MessageRejected(id, timestamp, reason) => Json.obj(
         "id" -> Json.fromString(id.toString()),
         "type" -> Json.fromString("message_rejected"),
         "reason" -> Json.fromString(reason),
@@ -85,80 +69,38 @@ object ChatEvent {
   }
 
   given Decoder[ChatEvent] = Decoder.instance { cursor =>
-    for {
+    for
       id <- cursor.get[UUID]("id")
       eventType <- cursor.get[String]("type")
       timestamp <- cursor.get[Instant]("timestamp")
 
-      event <- eventType match {
-        case "joined" =>
-          cursor
-            .get[String]("username")
-            .map(username =>
-              ChatEvent.UserJoined(
-                id,
-                User(username),
-                timestamp
-              )
-            )
-        case "left" =>
-          cursor
-            .get[String]("username")
-            .map(username =>
-              ChatEvent.UserLeft(
-                id,
-                User(username),
-                timestamp
-              )
-            )
+      event <- eventType match
+        case "joined" => cursor.get[String]("username")
+            .map(username => ChatEvent.UserJoined(id, User(username), timestamp))
+        case "left" => cursor.get[String]("username")
+            .map(username => ChatEvent.UserLeft(id, User(username), timestamp))
         case "broadcast" =>
-          for {
+          for
             username <- cursor.get[String]("username")
             message <- cursor.get[String]("message")
-          } yield ChatEvent.Broadcast(
-            id,
-            User(username),
-            message,
-            timestamp
-          )
+          yield ChatEvent.Broadcast(id, User(username), message, timestamp)
 
         case "direct_message" =>
-          for {
+          for
             sender <- cursor.get[String]("sender")
             recipient <- cursor.get[String]("recipient")
             message <- cursor.get[String]("message")
-          } yield ChatEvent.DirectMessage(
-            id,
-            User(sender),
-            User(recipient),
-            message,
-            timestamp
-          )
+          yield ChatEvent.DirectMessage(id, User(sender), User(recipient), message, timestamp)
 
-        case "users_listed" =>
-          cursor
-            .get[List[User]]("users")
+        case "users_listed" => cursor.get[List[User]]("users")
             .map(users => ChatEvent.UsersListed(id, users, timestamp))
 
-        case "message_accepted" =>
-          Right(ChatEvent.MessageAccepted(id, timestamp))
+        case "message_accepted" => Right(ChatEvent.MessageAccepted(id, timestamp))
 
         case "message_rejected" =>
-          for {
-            reason <- cursor.get[String]("reason")
-          } yield ChatEvent.MessageRejected(
-            id,
-            timestamp,
-            reason
-          )
+          for reason <- cursor.get[String]("reason")
+          yield ChatEvent.MessageRejected(id, timestamp, reason)
         case unknown =>
-          Left(
-            io.circe.DecodingFailure(
-              s"Unknown chat event type: $unknown",
-              cursor.history
-            )
-          )
-      }
-    } yield event
+          Left(io.circe.DecodingFailure(s"Unknown chat event type: $unknown", cursor.history))
+    yield event
   }
-}
