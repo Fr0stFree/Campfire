@@ -19,31 +19,30 @@ final private[service] class ChatServiceImpl(
   private val usernameRegex = "^[a-zA-Z0-9]{3,20}$".r
   private val historyLimit = 10
 
-  override def join(user: User): EitherT[IO, UserJoinError, UserSession] =
-    for
-      _ <- EitherT.fromEither[IO](validateUsername(user.name))
-      session <- EitherT.liftF(UserSession.create(user, queueSize))
-      _ <- sessions.create(session).leftMap(error => UserJoinError.UsernameTaken(error.username))
-      _ <- EitherT.liftF {
-        for
-          _ <- logger.info(s"User ${user.name} joined the chat")
-          event <- eventFactory.userJoined(user)
-          _ <- sendAll(event)
-          _ <- events.save(event)
-          historyEvents <- events.list(ChatEventFilter(user, historyLimit))
-          _ <- historyEvents.traverse_(session.send)
-        yield ()
-      }
-    yield session
+  override def join(user: User): EitherT[IO, UserJoinError, UserSession] = for {
+    _ <- EitherT.fromEither[IO](validateUsername(user.name))
+    session <- EitherT.liftF(UserSession.create(user, queueSize))
+    _ <- sessions.create(session).leftMap(error => UserJoinError.UsernameTaken(error.username))
+    _ <- EitherT.liftF {
+      for {
+        _ <- logger.info(s"User ${user.name} joined the chat")
+        event <- eventFactory.userJoined(user)
+        _ <- sendAll(event)
+        _ <- events.save(event)
+        historyEvents <- events.list(ChatEventFilter(user, historyLimit))
+        _ <- historyEvents.traverse_(session.send)
+      } yield ()
+    }
+  } yield session
 
   override def leave(session: UserSession): IO[Unit] = sessions.delete(session).foldF(
     _ => IO.unit,
     _ =>
-      for
+      for {
         event <- eventFactory.userLeft(session.user)
         _ <- sendAll(event)
         _ <- events.save(event)
-      yield ()
+      } yield ()
   )
 
   override def handle(session: UserSession, command: ClientCommand): IO[Unit] = command match
@@ -61,35 +60,31 @@ final private[service] class ChatServiceImpl(
     recipientName: String,
     message: String
   ): IO[Unit] = sessions.get(recipientName).value.flatMap {
-    case Right(recipient) =>
-      for
+    case Right(recipient) => for {
         event <- eventFactory.directMessage(sender.user, recipient.user, message)
         _ <- IO.both(recipient.send(event), sender.send(event))
         _ <- events.save(event)
         _ <- logger
           .info(s"User ${sender.user.name} sent a direct message to ${recipient.user.name}")
-      yield ()
-    case Left(_) =>
-      for
+      } yield ()
+    case Left(_) => for {
         reason = s"User '$recipientName' not found"
         event <- eventFactory.messageRejected(reason)
         _ <- sender.send(event)
-      yield ()
+      } yield ()
   }
 
-  private def handleBroadcastCommand(sender: UserSession, message: String): IO[Unit] =
-    for
-      event <- eventFactory.broadcast(sender.user, message)
-      _ <- sendAll(event)
-      _ <- events.save(event)
-    yield ()
+  private def handleBroadcastCommand(sender: UserSession, message: String): IO[Unit] = for {
+    event <- eventFactory.broadcast(sender.user, message)
+    _ <- sendAll(event)
+    _ <- events.save(event)
+  } yield ()
 
-  private def handleUsersListedCommand(destination: UserSession): IO[Unit] =
-    for
-      users <- sessions.list.map(_.map(_.user).sortBy(_.name))
-      event <- eventFactory.usersListed(users)
-      _ <- destination.send(event)
-    yield ()
+  private def handleUsersListedCommand(destination: UserSession): IO[Unit] = for {
+    users <- sessions.list.map(_.map(_.user).sortBy(_.name))
+    event <- eventFactory.usersListed(users)
+    _ <- destination.send(event)
+  } yield ()
 
   private def sendAll(event: ChatEvent): IO[Unit] = sessions.list
     .flatMap(_.traverse_(_.send(event)))

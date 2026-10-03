@@ -12,8 +12,7 @@ final case class UserSession(user: User, outgoing: Queue[IO, ChatEvent], connect
 
 object UserSession:
 
-  def create(user: User, queueSize: Int): IO[UserSession] =
-    for
-      queue <- Queue.bounded[IO, ChatEvent](queueSize)
-      timestamp <- IO.realTimeInstant
-    yield UserSession(user, queue, timestamp)
+  def create(user: User, queueSize: Int): IO[UserSession] = for {
+    queue <- Queue.bounded[IO, ChatEvent](queueSize)
+    timestamp <- IO.realTimeInstant
+  } yield UserSession(user, queue, timestamp)
